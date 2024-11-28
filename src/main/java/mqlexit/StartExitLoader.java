@@ -1,4 +1,7 @@
-package mqlexit.loader;
+
+
+
+
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -8,6 +11,7 @@ import browser.WebDriverManagerE;
 import config.ConfigurationManagerE;
 import config.CredentialsE;
 import logging.LoggerManagerE;
+import monitor.TradeMonitor;
 
 public class StartExitLoader {
     private static final Logger logger = LogManager.getLogger(StartExitLoader.class);
@@ -15,6 +19,9 @@ public class StartExitLoader {
     public StartExitLoader() {}
 
     public static void main(String[] args) {
+        TradeMonitor monitor = null;
+        WebDriver driverE = null;
+        
         try {
             // Initialize configuration
             ConfigurationManagerE configManager = new ConfigurationManagerE("C:\\tmp\\mql5");
@@ -28,10 +35,37 @@ public class StartExitLoader {
 
             // Initialize WebDriver
             WebDriverManagerE webDriverManager = new WebDriverManagerE(configManager.getDownloadPath());
-            WebDriver driverE = webDriverManager.initializeDriver();
+            driverE = webDriverManager.initializeDriver();
+
+            // Initialize and start trading monitor
+            monitor = new TradeMonitor(
+                driverE,
+                "c:\\tmp\\aktTrades",
+                "2235152"
+            );
+            
+            // Start the monitoring process
+            monitor.startMonitoring();
+            
+            // Keep the application running
+            logger.info("Application started successfully. Press Ctrl+C to stop.");
+            Thread.sleep(Long.MAX_VALUE);
 
         } catch (Exception e) {
             logger.error("Error in main process", e);
+        } finally {
+            // Ensure proper cleanup on shutdown
+            if (monitor != null) {
+                monitor.stopMonitoring();
+            }
+            if (driverE != null) {
+                try {
+                    driverE.quit();
+                    logger.info("WebDriver closed successfully");
+                } catch (Exception e) {
+                    logger.error("Error closing WebDriver", e);
+                }
+            }
         }
     }
 }
