@@ -8,10 +8,23 @@
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>
-        <selenium.version>4.18.1</selenium.version>
+        <selenium.version>4.20.0</selenium.version> <!-- Aktualisierte Version -->
         <log4j.version>2.22.1</log4j.version>
         <webdrivermanager.version>5.7.0</webdrivermanager.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>ossrh-snapshots</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
 
     <build>
         <plugins>
@@ -65,7 +78,7 @@
             <version>${webdrivermanager.version}</version>
         </dependency>
 
-        <!-- Log4j for logging -->
+        <!-- Log4j für Logging -->
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-core</artifactId>

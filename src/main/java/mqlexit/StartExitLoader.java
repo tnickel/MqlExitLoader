@@ -3,6 +3,8 @@
 
 
 
+import java.io.File;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.WebDriver;
@@ -21,6 +23,10 @@ public class StartExitLoader {
     public static void main(String[] args) {
         TradeMonitor monitor = null;
         WebDriver driverE = null;
+    
+    
+        
+        
         
         try {
             // Initialize configuration
@@ -40,8 +46,9 @@ public class StartExitLoader {
             // Initialize and start trading monitor
             monitor = new TradeMonitor(
                 driverE,
-                "c:\\tmp\\aktTrades",
-                "2235152"
+                "c:\\tmp\\mql5\\aktTrades",
+//                "2235152" AI-power
+                "2018455" //goden bug
             );
             
             // Start the monitoring process
@@ -68,4 +75,6 @@ public class StartExitLoader {
             }
         }
     }
+
+    
 }

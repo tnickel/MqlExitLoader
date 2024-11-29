@@ -78,7 +78,7 @@ public class ConfigurationManagerE {
     }
 
     public String getLogConfigPath() {
-        return rootDirPath + "\\log4j2.xml";
+        return configDirPath + "\\log4j2.xml";  // Geändert von rootDirPath zu configDirPath
     }
 
     public String getDownloadPath() {

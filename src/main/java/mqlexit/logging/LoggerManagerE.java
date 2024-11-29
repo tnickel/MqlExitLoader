@@ -1,9 +1,5 @@
 package logging;
 
-
-
-
-
 import java.io.File;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -41,9 +37,9 @@ public class LoggerManagerE {
                 .add(builder.newLayout("PatternLayout")
                         .addAttribute("pattern", "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n")));
 
-        // Create File Appender
+        // Create File Appender with absolute path
         builder.add(builder.newAppender("LogToFile", "File")
-                .addAttribute("fileName", "logs/application.log")
+                .addAttribute("fileName", "C:\\tmp\\mql5\\logs\\application.log")
                 .add(builder.newLayout("PatternLayout")
                         .addAttribute("pattern", "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n")));
 

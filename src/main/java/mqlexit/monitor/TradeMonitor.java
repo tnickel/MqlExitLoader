@@ -1,8 +1,5 @@
 package monitor;
 
-
-
-
 import java.io.File;
 import java.io.FileWriter;
 import java.time.LocalDateTime;
@@ -52,15 +49,10 @@ public class TradeMonitor {
             }
         };
 
-        // Schedule the task to run at specific times
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime nextRun = now.withMinute((now.getMinute() / 15) * 15).withSecond(10);
-        if (nextRun.isBefore(now)) {
-            nextRun = nextRun.plusMinutes(15);
-        }
-
-        long initialDelay = java.time.Duration.between(now, nextRun).toMillis();
-        scheduler.scheduleAtFixedRate(task, initialDelay, 15 * 60 * 1000, TimeUnit.MILLISECONDS);
+        // Schedule the task to run immediately and then every 20 seconds
+        logger.info("Starting monitoring with 20-second intervals...");
+        scheduler.scheduleAtFixedRate(task, 0, 20, TimeUnit.SECONDS);
+        logger.info("Monitoring schedule initialized successfully");
     }
 
     private String saveWebPage() {
