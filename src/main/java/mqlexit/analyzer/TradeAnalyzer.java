@@ -1,6 +1,5 @@
 package analyzer;
 
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import java.io.*;
@@ -13,9 +12,12 @@ public class TradeAnalyzer {
     private static final Logger logger = LogManager.getLogger(TradeAnalyzer.class);
     private final String logFilePath;
     private static final Pattern TRADE_PATTERN = Pattern.compile(
-        "(Buy Stop|Sell Stop).*?S/L:\\s*(\\d+\\.\\d+).*?T/P:\\s*(\\d+\\.\\d+)",
+        "<td[^>]*data-label=\"Time\">([^<]+)</td>\\s*" +
+        "<td[^>]*data-label=\"Type\">(Buy|Sell|Buy Stop|Sell Stop)</td>",
         Pattern.DOTALL
     );
+
+    private LocalDateTime lastUpdateTime = null;
 
     public TradeAnalyzer(String logFilePath) {
         this.logFilePath = logFilePath;
@@ -27,12 +29,23 @@ public class TradeAnalyzer {
             Matcher matcher = TRADE_PATTERN.matcher(content);
             
             while (matcher.find()) {
-                String tradeType = matcher.group(1);
-                String stopLoss = matcher.group(2);
-                String takeProfit = matcher.group(3);
+                String timeStr = matcher.group(1).trim();
+                String type = matcher.group(2);
                 
-                logTrade(tradeType, stopLoss, takeProfit);
+                // Parse trade time
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
+                LocalDateTime tradeTime = LocalDateTime.parse(timeStr, formatter);
+                
+                // Only log if this is a new trade or first run
+                if (lastUpdateTime == null || tradeTime.isAfter(lastUpdateTime)) {
+                    String subsequentContent = content.substring(matcher.end(), content.indexOf("</tr>", matcher.end()));
+                    logTrade(type, subsequentContent);
+                }
             }
+            
+            // Update lastUpdateTime
+            lastUpdateTime = LocalDateTime.now();
+            
         } catch (IOException e) {
             logger.error("Error analyzing HTML file: " + htmlFilePath, e);
         }
@@ -49,10 +62,22 @@ public class TradeAnalyzer {
         return content.toString();
     }
 
-    private void logTrade(String type, String stopLoss, String takeProfit) {
-        String logEntry = String.format("[%s] Typ: %s, S/L: %s, T/P: %s%n",
+    private void logTrade(String type, String rowContent) {
+        // Extrahiere die Werte aus den nachfolgenden TD-Elementen
+        Pattern valuePattern = Pattern.compile("<td[^>]*>([^<]+)</td>");
+        Matcher valueMatcher = valuePattern.matcher(rowContent);
+        
+        StringBuilder values = new StringBuilder();
+        while (valueMatcher.find()) {
+            String value = valueMatcher.group(1)
+                .replaceAll("&nbsp;", "")
+                .replaceAll("\\s+", "");
+            values.append(value).append(", ");
+        }
+
+        String logEntry = String.format("[%s] Type: %s, Values: %s%n",
             LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-            type, stopLoss, takeProfit);
+            type, values.toString());
             
         try (FileWriter writer = new FileWriter(logFilePath, true)) {
             writer.write(logEntry);

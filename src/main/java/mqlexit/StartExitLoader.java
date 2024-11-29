@@ -3,8 +3,6 @@
 
 
 
-import java.io.File;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.WebDriver;
@@ -24,7 +22,7 @@ public class StartExitLoader {
         TradeMonitor monitor = null;
         WebDriver driverE = null;
     
-    
+        
         
         
         
@@ -32,25 +30,26 @@ public class StartExitLoader {
             // Initialize configuration
             ConfigurationManagerE configManager = new ConfigurationManagerE("C:\\tmp\\mql5");
             configManager.initializeDirectories();
-
+            CredentialsE credentials = configManager.getOrCreateCredentials();
             // Initialize logger
             LoggerManagerE.initializeLogger(configManager.getLogConfigPath());
 
-            // Get credentials
-            CredentialsE credentials = configManager.getOrCreateCredentials();
+           
 
             // Initialize WebDriver
             WebDriverManagerE webDriverManager = new WebDriverManagerE(configManager.getDownloadPath());
             driverE = webDriverManager.initializeDriver();
 
+         // Get credentials
+           
             // Initialize and start trading monitor
             monitor = new TradeMonitor(
-                driverE,
-                "c:\\tmp\\mql5\\aktTrades",
-//                "2235152" AI-power
-                "2018455" //goden bug
-            );
-            
+            	    driverE,
+            	    "c:\\tmp\\mql5\\aktTrades",
+            	    // "2235152"  // AI-power
+            	    "2018455",    // goden bug
+            	    credentials   // Credentials-Objekt vom ConfigurationManagerE
+            	);
             // Start the monitoring process
             monitor.startMonitoring();
             
