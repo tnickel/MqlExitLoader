@@ -1,53 +1,77 @@
+
+
+// LoggerManagerE.java
 package logging;
 
 import java.io.File;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.core.config.Configurator;
-import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
-import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
-import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class LoggerManagerE {
-    private static final Logger logger = LogManager.getLogger(LoggerManagerE.class);
+    private static FileWriter logWriter;
 
-    public static void initializeLogger(String configPath) {
-        File log4jConfigFile = new File(configPath);
-        if (log4jConfigFile.exists()) {
-            try {
-                Configurator.initialize(null, log4jConfigFile.getAbsolutePath());
-                logger.info("Log4j configuration file loaded successfully.");
-            } catch (Exception e) {
-                logger.error("Could not load Log4j configuration file, using default configuration.", e);
-                configureDefaultLogger();
-            }
-        } else {
-            logger.warn("Log4j configuration file not found, using default configuration.");
-            configureDefaultLogger();
+    public static void initializeLogger(String logConfigPath) {
+        try {
+            // Bestimme das Root-Verzeichnis (C:\tmp\mql5)
+            File rootDir = new File(logConfigPath).getParentFile().getParentFile();
+            File logDir = new File(rootDir, "logs");
+            logDir.mkdirs();
+
+            // Erstelle den Log-File-Pfad
+            File logFile = new File(logDir, "application.log");
+            
+            // Öffne den FileWriter
+            logWriter = new FileWriter(logFile, true);
+            
+            // Initialer Log-Eintrag
+            writeLog("Logger initialized");
+            writeLog("Log file path: " + logFile.getAbsolutePath());
+
+        } catch (Exception e) {
+            System.err.println("Error initializing logger: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    private static void configureDefaultLogger() {
-        ConfigurationBuilder<BuiltConfiguration> builder = ConfigurationBuilderFactory.newConfigurationBuilder();
-        builder.setStatusLevel(org.apache.logging.log4j.Level.ERROR);
-        builder.setConfigurationName("DefaultConfig");
+    public static void writeLog(String message) {
+        try {
+            if (logWriter != null) {
+                String timestamp = java.time.LocalDateTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
+                String logEntry = String.format("%s - %s%n", timestamp, message);
+                logWriter.write(logEntry);
+                logWriter.flush();
+                System.out.println(logEntry.trim());  // Auch auf Konsole ausgeben
+            }
+        } catch (IOException e) {
+            System.err.println("Error writing to log: " + e.getMessage());
+        }
+    }
 
-        // Create Console Appender
-        builder.add(builder.newAppender("Console", "CONSOLE")
-                .add(builder.newLayout("PatternLayout")
-                        .addAttribute("pattern", "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n")));
+    public static void info(String message) {
+        writeLog("[INFO] " + message);
+    }
 
-        // Create File Appender with absolute path
-        builder.add(builder.newAppender("LogToFile", "File")
-                .addAttribute("fileName", "C:\\tmp\\mql5\\logs\\application.log")
-                .add(builder.newLayout("PatternLayout")
-                        .addAttribute("pattern", "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n")));
+    public static void error(String message) {
+        writeLog("[ERROR] " + message);
+    }
 
-        // Configure Root Logger
-        builder.add(builder.newRootLogger(org.apache.logging.log4j.Level.INFO)
-                .add(builder.newAppenderRef("Console"))
-                .add(builder.newAppenderRef("LogToFile")));
+    public static void debug(String message) {
+        writeLog("[DEBUG] " + message);
+    }
 
-        Configurator.initialize(builder.build());
+    public static void warn(String message) {
+        writeLog("[WARN] " + message);
+    }
+    
+    public static void shutdown() {
+        try {
+            if (logWriter != null) {
+                logWriter.flush();
+                logWriter.close();
+            }
+        } catch (IOException e) {
+            System.err.println("Error closing log writer: " + e.getMessage());
+        }
     }
 }

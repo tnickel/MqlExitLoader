@@ -1,3 +1,4 @@
+// ConfigurationManagerE.java
 package config;
 
 import java.io.File;
@@ -6,8 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Properties;
 import java.util.Scanner;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import logging.LoggerManagerE;
 
 public class ConfigurationManagerE {
     private final String rootDirPath;
@@ -16,7 +16,8 @@ public class ConfigurationManagerE {
     private final String logDirPath;
     private final String downloadPath;
     private final String defaultSignalDirPath;
-    private static final Logger logger = LogManager.getLogger(ConfigurationManagerE.class);
+    private static final String DEFAULT_BASE_URL = "https://www.mql5.com/en/signals";
+    private static final String DEFAULT_SIGNAL_ID = "201845";
 
     public ConfigurationManagerE(String rootDirPath) {
         this.rootDirPath = rootDirPath;
@@ -38,9 +39,9 @@ public class ConfigurationManagerE {
         if (!dir.exists()) {
             boolean created = dir.mkdirs();
             if (created) {
-                logger.info("Directory created: " + path);
+                LoggerManagerE.info("Directory created: " + path);
             } else {
-                logger.error("Could not create directory: " + path);
+                LoggerManagerE.error("Could not create directory: " + path);
             }
         }
     }
@@ -52,13 +53,28 @@ public class ConfigurationManagerE {
         if (configFile.exists()) {
             props.load(Files.newBufferedReader(configFile.toPath()));
             
-            // Prüfe ob Signaldir existiert, wenn nicht, füge es hinzu
+            boolean needsUpdate = false;
+            
             if (!props.containsKey("Signaldir")) {
                 props.setProperty("Signaldir", defaultSignalDirPath);
+                needsUpdate = true;
+            }
+            
+            if (!props.containsKey("BaseUrl")) {
+                props.setProperty("BaseUrl", DEFAULT_BASE_URL);
+                needsUpdate = true;
+            }
+            
+            if (!props.containsKey("SignalId")) {
+                props.setProperty("SignalId", DEFAULT_SIGNAL_ID);
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
                 try (FileWriter writer = new FileWriter(configFile)) {
                     props.store(writer, "Login Configuration");
                 }
-                logger.info("Added default signal directory to config: " + defaultSignalDirPath);
+                LoggerManagerE.info("Updated configuration with default values");
             }
             
             return new CredentialsE(
@@ -81,12 +97,14 @@ public class ConfigurationManagerE {
             props.setProperty("username", username);
             props.setProperty("password", password);
             props.setProperty("Signaldir", defaultSignalDirPath);
+            props.setProperty("BaseUrl", DEFAULT_BASE_URL);
+            props.setProperty("SignalId", DEFAULT_SIGNAL_ID);
 
             try (FileWriter writer = new FileWriter(configFile)) {
                 props.store(writer, "Login Configuration");
             }
 
-            logger.info("Created new config file with default signal directory: " + defaultSignalDirPath);
+            LoggerManagerE.info("Created new config file with default values");
             return new CredentialsE(username, password);
         }
     }
@@ -106,13 +124,57 @@ public class ConfigurationManagerE {
             if (configFile.exists()) {
                 props.load(Files.newBufferedReader(configFile.toPath()));
                 String signalDir = props.getProperty("Signaldir", defaultSignalDirPath);
-                createDirectory(signalDir); // Stelle sicher, dass das Verzeichnis existiert
+                createDirectory(signalDir);
                 return signalDir;
             }
         } catch (IOException e) {
-            logger.error("Error reading signal directory from config", e);
+            LoggerManagerE.error("Error reading signal directory from config: " + e.getMessage());
         }
         createDirectory(defaultSignalDirPath);
         return defaultSignalDirPath;
+    }
+
+    public String getBaseUrl() {
+        try {
+            Properties props = new Properties();
+            File configFile = new File(configFilePath);
+            if (configFile.exists()) {
+                props.load(Files.newBufferedReader(configFile.toPath()));
+                String baseUrl = props.getProperty("BaseUrl", DEFAULT_BASE_URL);
+                LoggerManagerE.info("Using base URL from config: " + baseUrl);
+                return baseUrl;
+            }
+        } catch (IOException e) {
+            LoggerManagerE.error("Error reading base URL from config: " + e.getMessage());
+        }
+        return DEFAULT_BASE_URL;
+    }
+
+    public String getSignalId() {
+        try {
+            Properties props = new Properties();
+            File configFile = new File(configFilePath);
+            if (configFile.exists()) {
+                props.load(Files.newBufferedReader(configFile.toPath()));
+                String configuredId = props.getProperty("SignalId");
+                if (configuredId != null && !configuredId.trim().isEmpty()) {
+                    LoggerManagerE.info("Using Signal ID from config file: " + configuredId);
+                    return configuredId;
+                }
+            }
+            LoggerManagerE.info("Using default Signal ID: " + DEFAULT_SIGNAL_ID);
+            return DEFAULT_SIGNAL_ID;
+        } catch (IOException e) {
+            LoggerManagerE.error("Error reading signal ID from config: " + e.getMessage());
+            return DEFAULT_SIGNAL_ID;
+        }
+    }
+
+    public String getFullSignalUrl() {
+        String signalId = getSignalId();
+        String baseUrl = getBaseUrl();
+        String fullUrl = baseUrl + "/" + signalId + "?source=Site+Signals+Subscriptions";
+        LoggerManagerE.info("Generated full URL: " + fullUrl);
+        return fullUrl;
     }
 }

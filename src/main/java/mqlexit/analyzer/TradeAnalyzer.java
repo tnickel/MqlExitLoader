@@ -1,7 +1,8 @@
 package analyzer;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+// TradeAnalyzer.java
+
+
 import java.io.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -11,9 +12,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import logging.LoggerManagerE;
 
 public class TradeAnalyzer {
-    private static final Logger logger = LogManager.getLogger(TradeAnalyzer.class);
     private final String logFilePath;
     private final String providerName;
     private final String signalFilePath;
@@ -40,21 +41,22 @@ public class TradeAnalyzer {
         if (!dir.exists()) {
             boolean created = dir.mkdirs();
             if (created) {
-                logger.info("Created signals directory: " + dir.getAbsolutePath());
+                LoggerManagerE.info("Created signals directory: " + dir.getAbsolutePath());
             } else {
-                logger.error("Failed to create signals directory");
+                LoggerManagerE.error("Failed to create signals directory");
             }
         }
     }
 
     public void analyzeHtmlFile(String htmlFilePath) {
         try {
+            LoggerManagerE.info("Starting analysis of HTML file: " + htmlFilePath);
             String content = readFile(htmlFilePath);
             List<Map<String, String>> allTradeInfo = new ArrayList<>();
             
             Matcher tbodyMatcher = FIRST_TBODY_PATTERN.matcher(content);
             if (!tbodyMatcher.find()) {
-                logger.info("No tbody found");
+                LoggerManagerE.info("No tbody found in HTML content");
                 return;
             }
             
@@ -74,10 +76,13 @@ public class TradeAnalyzer {
             }
             
             if (!allTradeInfo.isEmpty()) {
+                LoggerManagerE.info("Found " + allTradeInfo.size() + " trades to process");
                 writeSignalFile(allTradeInfo);
+            } else {
+                LoggerManagerE.info("No trades found in HTML content");
             }
         } catch (IOException e) {
-            logger.error("Error analyzing HTML file: " + htmlFilePath, e);
+            LoggerManagerE.error("Error analyzing HTML file: " + e.getMessage());
         }
     }
 
@@ -102,13 +107,12 @@ public class TradeAnalyzer {
 
     private void writeSignalFile(List<Map<String, String>> allTradeInfo) {
         try {
-            // Delete existing file if it exists
             File signalFile = new File(signalFilePath);
             if (signalFile.exists()) {
                 signalFile.delete();
+                LoggerManagerE.info("Deleted existing signal file");
             }
             
-            // Write new signals
             try (FileWriter writer = new FileWriter(signalFile)) {
                 for (Map<String, String> tradeInfo : allTradeInfo) {
                     StringBuilder line = new StringBuilder();
@@ -122,10 +126,10 @@ public class TradeAnalyzer {
                     line.append("\n");
                     writer.write(line.toString());
                 }
-                logger.info("Signal file written: " + signalFilePath);
+                LoggerManagerE.info("Signal file written: " + signalFilePath);
             }
         } catch (IOException e) {
-            logger.error("Error writing signal file", e);
+            LoggerManagerE.error("Error writing signal file: " + e.getMessage());
         }
     }
 
@@ -160,9 +164,9 @@ public class TradeAnalyzer {
             
         try (FileWriter writer = new FileWriter(logFilePath, true)) {
             writer.write(logEntry);
-            logger.info("Trade logged: " + logEntry.trim());
+            LoggerManagerE.info("Trade logged: " + logEntry.trim());
         } catch (IOException e) {
-            logger.error("Error writing to log file", e);
+            LoggerManagerE.error("Error writing to log file: " + e.getMessage());
         }
     }
 }
