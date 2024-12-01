@@ -40,7 +40,8 @@ public class StartExitLoader {
                 BASE_PATH + "\\aktTrades",
                 "2018455",  // Signal ID
                 credentials,
-                webDriverManager
+                webDriverManager,
+                configManager.getSignalDirPath()  // Signal directory from config
             );
             
             // Start the monitoring process

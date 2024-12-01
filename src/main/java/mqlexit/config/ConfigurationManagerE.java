@@ -15,6 +15,7 @@ public class ConfigurationManagerE {
     private final String configFilePath;
     private final String logDirPath;
     private final String downloadPath;
+    private final String defaultSignalDirPath;
     private static final Logger logger = LogManager.getLogger(ConfigurationManagerE.class);
 
     public ConfigurationManagerE(String rootDirPath) {
@@ -23,6 +24,7 @@ public class ConfigurationManagerE {
         this.configFilePath = configDirPath + "\\conf.txt";
         this.logDirPath = rootDirPath + "\\logs";
         this.downloadPath = rootDirPath + "\\download";
+        this.defaultSignalDirPath = rootDirPath + "\\signals";
     }
 
     public void initializeDirectories() {
@@ -49,6 +51,16 @@ public class ConfigurationManagerE {
 
         if (configFile.exists()) {
             props.load(Files.newBufferedReader(configFile.toPath()));
+            
+            // Prüfe ob Signaldir existiert, wenn nicht, füge es hinzu
+            if (!props.containsKey("Signaldir")) {
+                props.setProperty("Signaldir", defaultSignalDirPath);
+                try (FileWriter writer = new FileWriter(configFile)) {
+                    props.store(writer, "Login Configuration");
+                }
+                logger.info("Added default signal directory to config: " + defaultSignalDirPath);
+            }
+            
             return new CredentialsE(
                 props.getProperty("username"),
                 props.getProperty("password")
@@ -68,20 +80,39 @@ public class ConfigurationManagerE {
             Properties props = new Properties();
             props.setProperty("username", username);
             props.setProperty("password", password);
+            props.setProperty("Signaldir", defaultSignalDirPath);
 
             try (FileWriter writer = new FileWriter(configFile)) {
                 props.store(writer, "Login Configuration");
             }
 
+            logger.info("Created new config file with default signal directory: " + defaultSignalDirPath);
             return new CredentialsE(username, password);
         }
     }
 
     public String getLogConfigPath() {
-        return configDirPath + "\\log4j2.xml";  // Geändert von rootDirPath zu configDirPath
+        return configDirPath + "\\log4j2.xml";
     }
 
     public String getDownloadPath() {
         return downloadPath;
+    }
+
+    public String getSignalDirPath() {
+        try {
+            Properties props = new Properties();
+            File configFile = new File(configFilePath);
+            if (configFile.exists()) {
+                props.load(Files.newBufferedReader(configFile.toPath()));
+                String signalDir = props.getProperty("Signaldir", defaultSignalDirPath);
+                createDirectory(signalDir); // Stelle sicher, dass das Verzeichnis existiert
+                return signalDir;
+            }
+        } catch (IOException e) {
+            logger.error("Error reading signal directory from config", e);
+        }
+        createDirectory(defaultSignalDirPath);
+        return defaultSignalDirPath;
     }
 }

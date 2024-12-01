@@ -7,16 +7,16 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class TradeAnalyzer {
     private static final Logger logger = LogManager.getLogger(TradeAnalyzer.class);
     private final String logFilePath;
     private final String providerName;
-    private static final String SIGNAL_FILE_PATH = "C:\\tmp\\mql5\\signals\\signal.txt";
+    private final String signalFilePath;
     
     private static final Pattern FIRST_TBODY_PATTERN = Pattern.compile(
         "<tbody>(.*?)</tbody>",
@@ -28,18 +28,19 @@ public class TradeAnalyzer {
         Pattern.DOTALL
     );
 
-    public TradeAnalyzer(String logFilePath, String providerName) {
+    public TradeAnalyzer(String logFilePath, String providerName, String signalDir) {
         this.logFilePath = logFilePath;
         this.providerName = providerName;
-        createSignalDirectory();
+        this.signalFilePath = signalDir + File.separator + "signal.txt";
+        createSignalDirectory(signalDir);
     }
 
-    private void createSignalDirectory() {
-        File signalDir = new File("C:\\tmp\\mql5\\signals");
-        if (!signalDir.exists()) {
-            boolean created = signalDir.mkdirs();
+    private void createSignalDirectory(String signalDir) {
+        File dir = new File(signalDir);
+        if (!dir.exists()) {
+            boolean created = dir.mkdirs();
             if (created) {
-                logger.info("Created signals directory: " + signalDir.getAbsolutePath());
+                logger.info("Created signals directory: " + dir.getAbsolutePath());
             } else {
                 logger.error("Failed to create signals directory");
             }
@@ -102,7 +103,7 @@ public class TradeAnalyzer {
     private void writeSignalFile(List<Map<String, String>> allTradeInfo) {
         try {
             // Delete existing file if it exists
-            File signalFile = new File(SIGNAL_FILE_PATH);
+            File signalFile = new File(signalFilePath);
             if (signalFile.exists()) {
                 signalFile.delete();
             }
@@ -121,7 +122,7 @@ public class TradeAnalyzer {
                     line.append("\n");
                     writer.write(line.toString());
                 }
-                logger.info("Signal file written: " + SIGNAL_FILE_PATH);
+                logger.info("Signal file written: " + signalFilePath);
             }
         } catch (IOException e) {
             logger.error("Error writing signal file", e);

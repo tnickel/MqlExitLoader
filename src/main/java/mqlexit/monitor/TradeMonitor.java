@@ -2,27 +2,31 @@ package monitor;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.time.Duration;
+
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.NoSuchWindowException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+
 import com.google.common.base.Function;
-import org.openqa.selenium.NoSuchWindowException;
 
 import analyzer.TradeAnalyzer;
-import config.CredentialsE;
 import browser.WebDriverManagerE;
+import config.CredentialsE;
 
 public class TradeMonitor {
     private static final Logger logger = LogManager.getLogger(TradeMonitor.class);
@@ -36,37 +40,31 @@ public class TradeMonitor {
     private WebDriverWait wait;
     private boolean isLoggedIn = false;
     private final WebDriverManagerE webDriverManager;
+    private boolean initialLoginDone = false;
 
-    public TradeMonitor(WebDriver driver, String baseDir, String signalId, CredentialsE credentials, WebDriverManagerE webDriverManager) {
-        this.webDriverManager = webDriverManager;
-        this.driver = driver;
-        this.baseDir = baseDir;
-        this.providerName = signalId;
-        this.credentials = credentials;
-        this.analyzer = new TradeAnalyzer(baseDir + File.separator + "trades_log.txt", signalId);
-        this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
-        this.wait = new WebDriverWait(driver, Duration.ofSeconds(60));
-        createDirectories();
-    }
+    public TradeMonitor(WebDriver driver, String baseDir, String signalId, 
+            CredentialsE credentials, WebDriverManagerE webDriverManager,
+            String signalDir) {
+this.webDriverManager = webDriverManager;
+this.driver = driver;
+this.baseDir = baseDir;
+this.providerName = signalId;
+this.credentials = credentials;
+this.analyzer = new TradeAnalyzer(
+   baseDir + File.separator + "trades_log.txt", 
+   signalId,
+   signalDir
+);
+this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
+this.wait = new WebDriverWait(driver, Duration.ofSeconds(60));
+createDirectories();
+}
 
     private void createDirectories() {
         File dir = new File(baseDir + File.separator + providerName);
         if (!dir.exists() && !dir.mkdirs()) {
             logger.error("Failed to create directory: " + dir.getPath());
         }
-    }
-
-    private void reinitializeDriver() {
-        try {
-            if (driver != null) {
-                driver.quit();
-            }
-        } catch (Exception e) {
-            logger.error("Error closing old driver", e);
-        }
-        driver = webDriverManager.initializeDriver();
-        wait = new WebDriverWait(driver, Duration.ofSeconds(60));
-        isLoggedIn = false;
     }
 
     private void performLogin() {
@@ -117,15 +115,19 @@ public class TradeMonitor {
 
     public void startMonitoring() {
         try {
-            logger.info("Starting monitoring for Signal Provider ID: " + providerName);
-            performLogin();
-            
-            // Führe erste Prüfung sofort aus
-            String fileName = saveWebPage();
-            analyzer.analyzeHtmlFile(fileName);
+            if (!initialLoginDone) {
+                logger.info("Starting monitoring for Signal Provider ID: " + providerName);
+                performLogin();
+                initialLoginDone = true;
+                
+                String fileName = saveWebPage();
+                analyzer.analyzeHtmlFile(fileName);
+            }
             
         } catch (Exception e) {
             logger.error("Initial login failed", e);
+            showErrorDialog("Login fehlgeschlagen", 
+                "Der Login konnte nicht durchgeführt werden. Bitte überprüfen Sie Ihre Zugangsdaten und starten Sie das Programm neu.");
             return;
         }
         
@@ -133,22 +135,14 @@ public class TradeMonitor {
         
         Runnable task = () -> {
             try {
-                if (!isLoggedIn) {
-                    performLogin();
-                }
                 String fileName = saveWebPage();
                 analyzer.analyzeHtmlFile(fileName);
             } catch (NoSuchWindowException e) {
-                logger.error("Browser window was closed, reinitializing...");
-                reinitializeDriver();
-                try {
-                    performLogin();
-                } catch (Exception loginE) {
-                    logger.error("Failed to reinitialize after window closed", loginE);
-                }
+                logger.error("Browser window was closed", e);
+                logger.info("Please restart the application to perform a new login");
+                stopMonitoring();
             } catch (Exception e) {
                 logger.error("Error in monitoring task", e);
-                isLoggedIn = false;
             }
         };
 
@@ -210,9 +204,18 @@ public class TradeMonitor {
             return fileName;
         } catch (Exception e) {
             logger.error("Error saving webpage", e);
-            isLoggedIn = false;
             throw new RuntimeException("Failed to save webpage", e);
         }
+    }
+    
+    private void showErrorDialog(String title, String message) {
+        SwingUtilities.invokeLater(() -> {
+            JOptionPane.showMessageDialog(null,
+                message,
+                title,
+                JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
+        });
     }
     
     public void stopMonitoring() {
