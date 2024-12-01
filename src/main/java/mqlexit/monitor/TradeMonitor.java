@@ -18,28 +18,32 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import com.google.common.base.Function;
+import org.openqa.selenium.NoSuchWindowException;
 
 import analyzer.TradeAnalyzer;
 import config.CredentialsE;
+import browser.WebDriverManagerE;
 
 public class TradeMonitor {
     private static final Logger logger = LogManager.getLogger(TradeMonitor.class);
-    private final WebDriver driver;
+    private WebDriver driver;
     private final String baseDir;
     private final String providerName;
     private final TradeAnalyzer analyzer;
     private final String signalUrl;
     private static final String SIGNAL_BASE_URL = "https://www.mql5.com/en/signals/%s?source=Site+Signals+Subscriptions";
     private final CredentialsE credentials;
-    private final WebDriverWait wait;
+    private WebDriverWait wait;
     private boolean isLoggedIn = false;
+    private final WebDriverManagerE webDriverManager;
 
-    public TradeMonitor(WebDriver driver, String baseDir, String signalId, CredentialsE credentials) {
+    public TradeMonitor(WebDriver driver, String baseDir, String signalId, CredentialsE credentials, WebDriverManagerE webDriverManager) {
+        this.webDriverManager = webDriverManager;
         this.driver = driver;
         this.baseDir = baseDir;
         this.providerName = signalId;
         this.credentials = credentials;
-        this.analyzer = new TradeAnalyzer(baseDir + File.separator + "trades_log.txt");
+        this.analyzer = new TradeAnalyzer(baseDir + File.separator + "trades_log.txt", signalId);
         this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(60));
         createDirectories();
@@ -50,6 +54,19 @@ public class TradeMonitor {
         if (!dir.exists() && !dir.mkdirs()) {
             logger.error("Failed to create directory: " + dir.getPath());
         }
+    }
+
+    private void reinitializeDriver() {
+        try {
+            if (driver != null) {
+                driver.quit();
+            }
+        } catch (Exception e) {
+            logger.error("Error closing old driver", e);
+        }
+        driver = webDriverManager.initializeDriver();
+        wait = new WebDriverWait(driver, Duration.ofSeconds(60));
+        isLoggedIn = false;
     }
 
     private void performLogin() {
@@ -92,16 +109,21 @@ public class TradeMonitor {
     private void verifyLogin() {
         try {
             wait.until(ExpectedConditions.urlContains("/en"));
-            Thread.sleep(2000); // Kurze Pause nach Login
+            Thread.sleep(2000);
         } catch (Exception e) {
             throw new RuntimeException("Login verification failed", e);
         }
     }
 
     public void startMonitoring() {
-        // First attempt to login
         try {
+            logger.info("Starting monitoring for Signal Provider ID: " + providerName);
             performLogin();
+            
+            // Führe erste Prüfung sofort aus
+            String fileName = saveWebPage();
+            analyzer.analyzeHtmlFile(fileName);
+            
         } catch (Exception e) {
             logger.error("Initial login failed", e);
             return;
@@ -116,21 +138,66 @@ public class TradeMonitor {
                 }
                 String fileName = saveWebPage();
                 analyzer.analyzeHtmlFile(fileName);
+            } catch (NoSuchWindowException e) {
+                logger.error("Browser window was closed, reinitializing...");
+                reinitializeDriver();
+                try {
+                    performLogin();
+                } catch (Exception loginE) {
+                    logger.error("Failed to reinitialize after window closed", loginE);
+                }
             } catch (Exception e) {
                 logger.error("Error in monitoring task", e);
                 isLoggedIn = false;
             }
         };
 
-        logger.info("Starting monitoring with 60-second intervals");
-        scheduler.scheduleAtFixedRate(task, 0, 60, TimeUnit.SECONDS);
+        // Berechne Zeit bis zum nächsten definierten Intervall
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime nextRun;
+
+        int currentMinute = now.getMinute();
+        int[] checkMinutes = {14, 29, 44, 59};
+        
+        // Finde das nächste Intervall
+        int nextMinute = -1;
+        for (int checkMinute : checkMinutes) {
+            if (currentMinute < checkMinute || 
+               (currentMinute == checkMinute && now.getSecond() < 10)) {
+                nextMinute = checkMinute;
+                break;
+            }
+        }
+        
+        // Wenn kein nächstes Intervall in dieser Stunde gefunden wurde,
+        // nehme das erste Intervall der nächsten Stunde
+        if (nextMinute == -1) {
+            nextRun = now.plusHours(1)
+                        .withMinute(14)
+                        .withSecond(10)
+                        .withNano(0);
+        } else {
+            nextRun = now.withMinute(nextMinute)
+                        .withSecond(10)
+                        .withNano(0);
+        }
+
+        long initialDelay = java.time.Duration.between(now, nextRun).toMillis();
+        
+        logger.info("Scheduled next check for Signal Provider " + providerName + " at: " + 
+            nextRun.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        scheduler.scheduleAtFixedRate(task, initialDelay, 15 * 60 * 1000, TimeUnit.MILLISECONDS);
     }
 
     private String saveWebPage() {
         try {
+            logger.info("Loading URL: " + signalUrl);
             driver.get(signalUrl);
-            // Wait for the content to load
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[text()='Trading history']")));
+            
+            // Warte auf die Tabelle mit den Trade-Daten
+            wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("td[data-label='Type']")
+            ));
             
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String fileName = baseDir + File.separator + providerName + File.separator + timestamp + ".html";

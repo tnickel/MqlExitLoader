@@ -1,8 +1,3 @@
-
-
-
-
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.WebDriver;
@@ -15,41 +10,39 @@ import monitor.TradeMonitor;
 
 public class StartExitLoader {
     private static final Logger logger = LogManager.getLogger(StartExitLoader.class);
+    private static final String BASE_PATH = "C:\\tmp\\mql5";
 
     public StartExitLoader() {}
 
     public static void main(String[] args) {
         TradeMonitor monitor = null;
         WebDriver driverE = null;
-    
-        
-        
-        
+        WebDriverManagerE webDriverManager = null;
         
         try {
             // Initialize configuration
-            ConfigurationManagerE configManager = new ConfigurationManagerE("C:\\tmp\\mql5");
+            ConfigurationManagerE configManager = new ConfigurationManagerE(BASE_PATH);
             configManager.initializeDirectories();
-            CredentialsE credentials = configManager.getOrCreateCredentials();
+
             // Initialize logger
             LoggerManagerE.initializeLogger(configManager.getLogConfigPath());
 
-           
+            // Get credentials
+            CredentialsE credentials = configManager.getOrCreateCredentials();
 
             // Initialize WebDriver
-            WebDriverManagerE webDriverManager = new WebDriverManagerE(configManager.getDownloadPath());
+            webDriverManager = new WebDriverManagerE(configManager.getDownloadPath());
             driverE = webDriverManager.initializeDriver();
 
-         // Get credentials
-           
             // Initialize and start trading monitor
             monitor = new TradeMonitor(
-            	    driverE,
-            	    "c:\\tmp\\mql5\\aktTrades",
-            	    // "2235152"  // AI-power
-            	    "2018455",    // goden bug
-            	    credentials   // Credentials-Objekt vom ConfigurationManagerE
-            	);
+                driverE,
+                BASE_PATH + "\\aktTrades",
+                "2018455",  // Signal ID
+                credentials,
+                webDriverManager
+            );
+            
             // Start the monitoring process
             monitor.startMonitoring();
             
@@ -74,6 +67,4 @@ public class StartExitLoader {
             }
         }
     }
-
-    
 }
