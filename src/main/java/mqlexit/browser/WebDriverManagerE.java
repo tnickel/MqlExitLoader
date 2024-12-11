@@ -24,8 +24,17 @@ public class WebDriverManagerE {
             options.addArguments("--no-sandbox");
             options.addArguments("--disable-dev-shm-usage");
             
+            // Cache-Control Einstellungen
+            options.addArguments("--disable-application-cache");
+            options.addArguments("--disable-cache");
+            options.addArguments("--disable-offline-load-stale-cache");
+            options.addArguments("--disk-cache-size=0");
+            
             HashMap<String, Object> prefs = new HashMap<>();
             prefs.put("download.default_directory", downloadPath);
+            // Cache in Chrome deaktivieren
+            prefs.put("profile.default_content_settings.cookies", 2);
+            prefs.put("profile.cookie_controls_mode", 2);
             options.setExperimentalOption("prefs", prefs);
             
             try {

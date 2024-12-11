@@ -8,6 +8,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -45,20 +47,28 @@ public class TradeMonitor {
     public TradeMonitor(WebDriver driver, String baseDir, String signalId, 
             CredentialsE credentials, WebDriverManagerE webDriverManager,
             String signalDir) {
-this.webDriverManager = webDriverManager;
-this.driver = driver;
-this.baseDir = baseDir;
-this.providerName = signalId;
-this.credentials = credentials;
-this.analyzer = new TradeAnalyzer(
-   baseDir + File.separator + "trades_log.txt", 
-   signalId,
-   signalDir
-);
-this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
-this.wait = new WebDriverWait(driver, Duration.ofSeconds(60));
-createDirectories();
-}
+        this.webDriverManager = webDriverManager;
+        this.driver = driver;
+        this.baseDir = baseDir;
+        this.providerName = signalId;
+        this.credentials = credentials;
+        this.analyzer = new TradeAnalyzer(
+           baseDir + File.separator + "trades_log.txt", 
+           signalId,
+           signalDir
+        );
+        this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
+        
+        // Setze erweiterte Timeouts
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+        driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
+        driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
+        
+        // Längerer Timeout für explizite Wartezeiten
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(90));
+        
+        createDirectories();
+    }
 
     private void createDirectories() {
         File dir = new File(baseDir + File.separator + providerName);
@@ -69,24 +79,43 @@ createDirectories();
 
     private void performLogin() {
         logger.info("Starting login process...");
-        driver.get("https://www.mql5.com/en/auth_login");
+        try {
+            driver.get("https://www.mql5.com/en/auth_login");
+            
+            // Warte auf das Login-Formular
+            Function<WebDriver, WebElement> waitFunction = ExpectedConditions.visibilityOfElementLocated(By.id("Login"));
+            WebElement usernameField = wait.until(waitFunction);
+            WebElement passwordField = driver.findElement(By.id("Password"));
 
-        Function<WebDriver, WebElement> waitFunction = ExpectedConditions.visibilityOfElementLocated(By.id("Login"));
-        WebElement usernameField = wait.until(waitFunction);
-        WebElement passwordField = driver.findElement(By.id("Password"));
+            // Eingabefelder leeren und neu befüllen
+            usernameField.clear();
+            passwordField.clear();
+            usernameField.sendKeys(credentials.getUsername());
+            passwordField.sendKeys(credentials.getPassword());
 
-        usernameField.sendKeys(credentials.getUsername());
-        passwordField.sendKeys(credentials.getPassword());
-
-        clickLoginButton();
-        verifyLogin();
-        isLoggedIn = true;
+            // Warte kurz vor dem Klick
+            Thread.sleep(1000);
+            
+            clickLoginButton();
+            verifyLogin();
+            isLoggedIn = true;
+            
+        } catch (Exception e) {
+            logger.error("Login process failed", e);
+            isLoggedIn = false;
+            throw new RuntimeException("Login failed", e);
+        }
     }
 
     private void clickLoginButton() {
         WebElement loginButton = findLoginButton();
         if (loginButton != null) {
-            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", loginButton);
+            try {
+                wait.until(ExpectedConditions.elementToBeClickable(loginButton));
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", loginButton);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to click login button", e);
+            }
         } else {
             throw new RuntimeException("Login button could not be found");
         }
@@ -108,9 +137,106 @@ createDirectories();
         try {
             wait.until(ExpectedConditions.urlContains("/en"));
             Thread.sleep(2000);
+            
+            // Zusätzliche Überprüfung des Login-Status
+            if (driver.getCurrentUrl().contains("auth_login")) {
+                throw new RuntimeException("Still on login page after login attempt");
+            }
         } catch (Exception e) {
             throw new RuntimeException("Login verification failed", e);
         }
+    }
+
+    private String saveWebPage() {
+        int maxRetries = 3;
+        int currentTry = 0;
+        
+        while (currentTry < maxRetries) {
+            try {
+                logger.info("Loading URL: " + signalUrl + " (Attempt " + (currentTry + 1) + " of " + maxRetries + ")");
+                
+                // Überprüfe Login-Status vor dem Laden der Seite
+                if (!isLoggedIn) {
+                    logger.info("User not logged in, performing login first...");
+                    performLogin();
+                }
+                
+                // Cache leeren und neu laden erzwingen
+                ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
+                ((JavascriptExecutor) driver).executeScript("window.sessionStorage.clear();");
+                
+                // Setze Cache-Control Header
+                String urlWithTimestamp = signalUrl + (signalUrl.contains("?") ? "&" : "?") + "nocache=" + System.currentTimeMillis();
+                
+                // Füge kleine Verzögerung hinzu
+                Thread.sleep(2000);
+                
+                // Setze Page Load Timeout
+                driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
+                
+                // Lade die Seite
+                driver.get(urlWithTimestamp);
+                
+                // Warte auf die Tabelle mit den Trade-Daten mit erhöhtem Timeout
+                wait = new WebDriverWait(driver, Duration.ofSeconds(90));
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                    By.cssSelector("td[data-label='Type']")
+                ));
+                
+                // Zusätzliche Wartezeit für dynamische Inhalte
+                Thread.sleep(3000);
+                
+                // Prüfe auf Trade-Signale
+                String pageSource = driver.getPageSource();
+                boolean hasSignals = containsTradeSignal(pageSource);
+                if (!hasSignals) {
+                    logger.info("No trade signals found - page not saved");
+                    return null;
+                }
+                logger.info("Trade signals found - saving page...");
+                
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                String fileName = baseDir + File.separator + providerName + File.separator + timestamp + ".html";
+                
+                // Speichere die Seite
+                try (FileWriter writer = new FileWriter(fileName)) {
+                    writer.write(pageSource);
+                }
+                
+                logger.info("Webpage saved successfully: " + fileName);
+                return fileName;
+                
+            } catch (Exception e) {
+                currentTry++;
+                logger.error("Error saving webpage (Attempt " + currentTry + " of " + maxRetries + ")", e);
+                
+                if (currentTry >= maxRetries) {
+                    throw new RuntimeException("Failed to save webpage after " + maxRetries + " attempts", e);
+                }
+                
+                // Wenn der Fehler aufgrund eines Login-Problems auftritt, setze isLoggedIn zurück
+                if (e.getMessage().contains("auth_login") || 
+                    (driver != null && driver.getCurrentUrl().contains("auth_login"))) {
+                    isLoggedIn = false;
+                }
+                
+                try {
+                    // Warte vor dem nächsten Versuch
+                    Thread.sleep(5000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        
+        throw new RuntimeException("Failed to save webpage after " + maxRetries + " attempts");
+    }
+
+    private boolean containsTradeSignal(String content) {
+        Pattern pattern = Pattern.compile("<td[^>]*data-label=\"Type\"[^>]*>(Buy|Sell|Buy Stop|Sell Stop)</td>");
+        Matcher matcher = pattern.matcher(content);
+        return matcher.find();
     }
 
     public void startMonitoring() {
@@ -121,7 +247,9 @@ createDirectories();
                 initialLoginDone = true;
                 
                 String fileName = saveWebPage();
-                analyzer.analyzeHtmlFile(fileName);
+                if (fileName != null) {
+                    analyzer.analyzeHtmlFile(fileName);
+                }
             }
             
         } catch (Exception e) {
@@ -136,13 +264,17 @@ createDirectories();
         Runnable task = () -> {
             try {
                 String fileName = saveWebPage();
-                analyzer.analyzeHtmlFile(fileName);
+                if (fileName != null) {
+                    analyzer.analyzeHtmlFile(fileName);
+                }
             } catch (NoSuchWindowException e) {
                 logger.error("Browser window was closed", e);
                 logger.info("Please restart the application to perform a new login");
                 stopMonitoring();
             } catch (Exception e) {
                 logger.error("Error in monitoring task", e);
+                // Versuche einen erneuten Login beim nächsten Durchlauf
+                isLoggedIn = false;
             }
         };
 
@@ -157,7 +289,7 @@ createDirectories();
         int nextMinute = -1;
         for (int checkMinute : checkMinutes) {
             if (currentMinute < checkMinute || 
-               (currentMinute == checkMinute && now.getSecond() < 10)) {
+                (currentMinute == checkMinute && now.getSecond() < 45)) {
                 nextMinute = checkMinute;
                 break;
             }
@@ -168,11 +300,11 @@ createDirectories();
         if (nextMinute == -1) {
             nextRun = now.plusHours(1)
                         .withMinute(14)
-                        .withSecond(10)
+                        .withSecond(45)
                         .withNano(0);
         } else {
             nextRun = now.withMinute(nextMinute)
-                        .withSecond(10)
+                        .withSecond(45)
                         .withNano(0);
         }
 
@@ -181,31 +313,6 @@ createDirectories();
         logger.info("Scheduled next check for Signal Provider " + providerName + " at: " + 
             nextRun.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         scheduler.scheduleAtFixedRate(task, initialDelay, 15 * 60 * 1000, TimeUnit.MILLISECONDS);
-    }
-
-    private String saveWebPage() {
-        try {
-            logger.info("Loading URL: " + signalUrl);
-            driver.get(signalUrl);
-            
-            // Warte auf die Tabelle mit den Trade-Daten
-            wait.until(ExpectedConditions.presenceOfElementLocated(
-                By.cssSelector("td[data-label='Type']")
-            ));
-            
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String fileName = baseDir + File.separator + providerName + File.separator + timestamp + ".html";
-            
-            try (FileWriter writer = new FileWriter(fileName)) {
-                writer.write(driver.getPageSource());
-            }
-            
-            logger.info("Webpage saved: " + fileName);
-            return fileName;
-        } catch (Exception e) {
-            logger.error("Error saving webpage", e);
-            throw new RuntimeException("Failed to save webpage", e);
-        }
     }
     
     private void showErrorDialog(String title, String message) {
@@ -221,6 +328,7 @@ createDirectories();
     public void stopMonitoring() {
         if (driver != null) {
             try {
+                logger.info("Closing WebDriver...");
                 driver.quit();
                 logger.info("WebDriver closed successfully");
             } catch (Exception e) {

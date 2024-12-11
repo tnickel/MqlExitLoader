@@ -1,8 +1,5 @@
 package analyzer;
 
-// TradeAnalyzer.java
-
-
 import java.io.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,6 +9,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
+import java.util.Comparator;
 import logging.LoggerManagerE;
 
 public class TradeAnalyzer {
@@ -44,6 +43,17 @@ public class TradeAnalyzer {
                 LoggerManagerE.info("Created signals directory: " + dir.getAbsolutePath());
             } else {
                 LoggerManagerE.error("Failed to create signals directory");
+            }
+        }
+
+        // Erstelle auch gleich das oldsignals Verzeichnis
+        File oldSignalsDir = new File(signalDir, "oldsignals");
+        if (!oldSignalsDir.exists()) {
+            boolean created = oldSignalsDir.mkdirs();
+            if (created) {
+                LoggerManagerE.info("Created oldsignals directory: " + oldSignalsDir.getAbsolutePath());
+            } else {
+                LoggerManagerE.error("Failed to create oldsignals directory");
             }
         }
     }
@@ -109,10 +119,30 @@ public class TradeAnalyzer {
         try {
             File signalFile = new File(signalFilePath);
             if (signalFile.exists()) {
-                signalFile.delete();
-                LoggerManagerE.info("Deleted existing signal file");
+                // Erstelle oldsignals Verzeichnis falls es nicht existiert
+                File oldSignalsDir = new File(signalFile.getParent(), "oldsignals");
+                if (!oldSignalsDir.exists()) {
+                    oldSignalsDir.mkdirs();
+                    LoggerManagerE.info("Created oldsignals directory: " + oldSignalsDir.getAbsolutePath());
+                }
+                
+                // Erstelle Dateinamen mit Timestamp
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+                File backupFile = new File(oldSignalsDir, "signal_" + timestamp + ".txt");
+                
+                // Verschiebe die alte signal.txt
+                boolean moved = signalFile.renameTo(backupFile);
+                if (moved) {
+                    LoggerManagerE.info("Moved old signal file to: " + backupFile.getAbsolutePath());
+                } else {
+                    LoggerManagerE.error("Failed to move old signal file");
+                }
+
+                // Prüfe und lösche alte Dateien wenn mehr als 100 vorhanden sind
+                cleanupOldSignals(oldSignalsDir, 100);
             }
             
+            // Schreibe neue signal.txt
             try (FileWriter writer = new FileWriter(signalFile)) {
                 for (Map<String, String> tradeInfo : allTradeInfo) {
                     StringBuilder line = new StringBuilder();
@@ -130,6 +160,23 @@ public class TradeAnalyzer {
             }
         } catch (IOException e) {
             LoggerManagerE.error("Error writing signal file: " + e.getMessage());
+        }
+    }
+
+    private void cleanupOldSignals(File directory, int maxFiles) {
+        File[] files = directory.listFiles((dir, name) -> name.startsWith("signal_") && name.endsWith(".txt"));
+        if (files != null && files.length > maxFiles) {
+            // Sortiere Dateien nach Änderungsdatum (älteste zuerst)
+            Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+            
+            // Lösche die ältesten Dateien bis nur noch maxFiles übrig sind
+            for (int i = 0; i < files.length - maxFiles; i++) {
+                if (files[i].delete()) {
+                    LoggerManagerE.info("Deleted old signal file: " + files[i].getName());
+                } else {
+                    LoggerManagerE.error("Failed to delete old signal file: " + files[i].getName());
+                }
+            }
         }
     }
 
