@@ -1,4 +1,3 @@
-// ConfigurationManagerE.java
 package config;
 
 import java.io.File;
@@ -15,9 +14,8 @@ public class ConfigurationManagerE {
     private final String configFilePath;
     private final String logDirPath;
     private final String downloadPath;
-    private final String defaultSignalDirPath;
-    private static final String DEFAULT_BASE_URL = "https://www.mql5.com/en/signals";
     private static final String DEFAULT_SIGNAL_ID = "201845";
+    private static final String DEFAULT_BASE_URL = "https://www.mql5.com/en/signals";
 
     public ConfigurationManagerE(String rootDirPath) {
         this.rootDirPath = rootDirPath;
@@ -25,7 +23,6 @@ public class ConfigurationManagerE {
         this.configFilePath = configDirPath + "\\conf.txt";
         this.logDirPath = rootDirPath + "\\logs";
         this.downloadPath = rootDirPath + "\\download";
-        this.defaultSignalDirPath = rootDirPath + "\\signals";
     }
 
     public void initializeDirectories() {
@@ -56,7 +53,7 @@ public class ConfigurationManagerE {
             boolean needsUpdate = false;
             
             if (!props.containsKey("Signaldir")) {
-                props.setProperty("Signaldir", defaultSignalDirPath);
+                props.setProperty("Signaldir", getSignalDirPath());
                 needsUpdate = true;
             }
             
@@ -96,7 +93,7 @@ public class ConfigurationManagerE {
             Properties props = new Properties();
             props.setProperty("username", username);
             props.setProperty("password", password);
-            props.setProperty("Signaldir", defaultSignalDirPath);
+            props.setProperty("Signaldir", getSignalDirPath());
             props.setProperty("BaseUrl", DEFAULT_BASE_URL);
             props.setProperty("SignalId", DEFAULT_SIGNAL_ID);
 
@@ -123,15 +120,44 @@ public class ConfigurationManagerE {
             File configFile = new File(configFilePath);
             if (configFile.exists()) {
                 props.load(Files.newBufferedReader(configFile.toPath()));
-                String signalDir = props.getProperty("Signaldir", defaultSignalDirPath);
-                createDirectory(signalDir);
-                return signalDir;
+                // Überprüfe erst, ob ein benutzerdefinierter Pfad gesetzt ist
+                String signalDir = props.getProperty("Signaldir");
+                
+                if (signalDir != null && !signalDir.trim().isEmpty()) {
+                    LoggerManagerE.info("Using configured signal directory: " + signalDir);
+                    createDirectory(signalDir);
+                    return signalDir;
+                }
             }
+
+            // Wenn kein Pfad konfiguriert ist, suche nach MetaTrader Verzeichnis
+            String appDataPath = System.getenv("APPDATA");
+            String mt4Path = appDataPath + "\\MetaQuotes\\Terminal";
+            File mt4Dir = new File(mt4Path);
+            
+            if (mt4Dir.exists() && mt4Dir.isDirectory()) {
+                File[] terminals = mt4Dir.listFiles(File::isDirectory);
+                if (terminals != null && terminals.length > 0) {
+                    // Nimm das erste gefundene Terminal-Verzeichnis
+                    String mql4Files = terminals[0].getAbsolutePath() + "\\MQL4\\Files";
+                    LoggerManagerE.info("Using MetaTrader directory: " + mql4Files);
+                    createDirectory(mql4Files);
+                    return mql4Files;
+                }
+            }
+            
+            // Fallback auf Default-Pfad wenn kein MetaTrader gefunden wurde
+            String defaultPath = "C:\\tmp\\mql5\\signals";
+            LoggerManagerE.warn("No MetaTrader directory found, using default path: " + defaultPath);
+            createDirectory(defaultPath);
+            return defaultPath;
+            
         } catch (IOException e) {
             LoggerManagerE.error("Error reading signal directory from config: " + e.getMessage());
+            String defaultPath = "C:\\tmp\\mql5\\signals";
+            createDirectory(defaultPath);
+            return defaultPath;
         }
-        createDirectory(defaultSignalDirPath);
-        return defaultSignalDirPath;
     }
 
     public String getBaseUrl() {
@@ -168,13 +194,5 @@ public class ConfigurationManagerE {
             LoggerManagerE.error("Error reading signal ID from config: " + e.getMessage());
             return DEFAULT_SIGNAL_ID;
         }
-    }
-
-    public String getFullSignalUrl() {
-        String signalId = getSignalId();
-        String baseUrl = getBaseUrl();
-        String fullUrl = baseUrl + "/" + signalId + "?source=Site+Signals+Subscriptions";
-        LoggerManagerE.info("Generated full URL: " + fullUrl);
-        return fullUrl;
     }
 }

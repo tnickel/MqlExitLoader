@@ -58,10 +58,10 @@ public class TradeAnalyzer {
         }
     }
 
-    public void analyzeHtmlFile(String htmlFilePath) {
+    // Neue Methode für direkten HTML-Content
+    public void analyzeHtmlContent(String content) {
         try {
-            LoggerManagerE.info("Starting analysis of HTML file: " + htmlFilePath);
-            String content = readFile(htmlFilePath);
+            LoggerManagerE.info("Starting analysis of HTML content");
             List<Map<String, String>> allTradeInfo = new ArrayList<>();
             
             Matcher tbodyMatcher = FIRST_TBODY_PATTERN.matcher(content);
@@ -91,8 +91,8 @@ public class TradeAnalyzer {
             } else {
                 LoggerManagerE.info("No trades found in HTML content");
             }
-        } catch (IOException e) {
-            LoggerManagerE.error("Error analyzing HTML file: " + e.getMessage());
+        } catch (Exception e) {
+            LoggerManagerE.error("Error analyzing HTML content: " + e.getMessage());
         }
     }
 
@@ -177,6 +177,17 @@ public class TradeAnalyzer {
                     LoggerManagerE.error("Failed to delete old signal file: " + files[i].getName());
                 }
             }
+        }
+    }
+
+    // Alte Methode für die Übergangsphase beibehalten
+    public void analyzeHtmlFile(String htmlFilePath) {
+        try {
+            LoggerManagerE.info("Starting analysis of HTML file: " + htmlFilePath);
+            String content = readFile(htmlFilePath);
+            analyzeHtmlContent(content);
+        } catch (IOException e) {
+            LoggerManagerE.error("Error analyzing HTML file: " + e.getMessage());
         }
     }
 

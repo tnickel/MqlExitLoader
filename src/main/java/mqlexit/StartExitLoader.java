@@ -1,20 +1,17 @@
 // StartExitLoader.java
-import org.openqa.selenium.WebDriver;
-import browser.WebDriverManagerE;
+import logging.LoggerManagerE;
 import config.ConfigurationManagerE;
 import config.CredentialsE;
-import logging.LoggerManagerE;
-import monitor.TradeMonitor;
-
+import monitor.HttpTradeMonitor;
+import monitor.HeadlessChromeTradeMonitor;
+import monitor.HybridTradeMonitor;
 public class StartExitLoader {
     private static final String BASE_PATH = "C:\\tmp\\mql5";
 
     public StartExitLoader() {}
 
     public static void main(String[] args) {
-        TradeMonitor monitor = null;
-        WebDriver driverE = null;
-        WebDriverManagerE webDriverManager = null;
+    	HybridTradeMonitor monitor =null;
         
         try {
             LoggerManagerE.info("Starting application...");
@@ -29,19 +26,13 @@ public class StartExitLoader {
             LoggerManagerE.info("Getting credentials...");
             CredentialsE credentials = configManager.getOrCreateCredentials();
 
-            LoggerManagerE.info("Initializing WebDriver...");
-            webDriverManager = new WebDriverManagerE(configManager.getDownloadPath());
-            driverE = webDriverManager.initializeDriver();
-
             LoggerManagerE.info("Setting up monitor...");
-            monitor = new TradeMonitor(
-                driverE,
-                BASE_PATH + "\\aktTrades",
-                configManager.getSignalId(),
-                credentials,
-                webDriverManager,
-                configManager.getSignalDirPath()
-            );
+             monitor = new HybridTradeMonitor(
+            	    BASE_PATH + "\\aktTrades",
+            	    configManager.getSignalId(),
+            	    credentials,
+            	    configManager.getSignalDirPath()
+            	);
             
             LoggerManagerE.info("Starting monitoring...");
             monitor.startMonitoring();
@@ -56,14 +47,6 @@ public class StartExitLoader {
             if (monitor != null) {
                 LoggerManagerE.info("Stopping monitor...");
                 monitor.stopMonitoring();
-            }
-            if (driverE != null) {
-                try {
-                    LoggerManagerE.info("Closing WebDriver...");
-                    driverE.quit();
-                } catch (Exception e) {
-                    LoggerManagerE.error("Error closing WebDriver: " + e.getMessage());
-                }
             }
             LoggerManagerE.shutdown();
         }
