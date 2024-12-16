@@ -233,12 +233,13 @@ public class TradeMonitor {
         throw new RuntimeException("Failed to save webpage after " + maxRetries + " attempts");
     }
 
+   
     private boolean containsTradeSignal(String content) {
         Pattern pattern = Pattern.compile("<td[^>]*data-label=\"Type\"[^>]*>(Buy|Sell|Buy Stop|Sell Stop)</td>");
         Matcher matcher = pattern.matcher(content);
         return matcher.find();
     }
-
+    
     public void startMonitoring() {
         try {
             if (!initialLoginDone) {

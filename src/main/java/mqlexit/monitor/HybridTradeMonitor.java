@@ -7,12 +7,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import logging.LoggerManagerE;
 import config.CredentialsE;
 import analyzer.TradeAnalyzer;
 
 import org.openqa.selenium.By;
-
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -24,6 +24,7 @@ public class HybridTradeMonitor {
     private final CredentialsE credentials;
     private final TradeAnalyzer analyzer;
     private final String signalUrl;
+    private final String signalFile;
     private ChromeDriver driver;  
     private final HttpClient httpClient;
     private String sessionCookie;
@@ -42,6 +43,7 @@ public class HybridTradeMonitor {
             signalDir
         );
         this.signalUrl = String.format(SIGNAL_BASE_URL, signalId);
+        this.signalFile = baseDir + File.separator + "signal.txt";
         this.httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(20))
@@ -53,7 +55,6 @@ public class HybridTradeMonitor {
             LoggerManagerE.info("Starting initial Selenium login process...");
             
             ChromeOptions options = new ChromeOptions();
-            // Browser-Erkennung umgehen
             options.addArguments("--window-size=1920,1080");
             options.addArguments("--start-maximized");
             options.addArguments("--no-sandbox");
@@ -62,7 +63,6 @@ public class HybridTradeMonitor {
             options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
             options.addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             
-            // WebDriver Manager Setup
             io.github.bonigarcia.wdm.WebDriverManager.chromedriver().setup();
             driver = new ChromeDriver(options);
             
@@ -83,7 +83,6 @@ public class HybridTradeMonitor {
             driver.findElement(By.id("loginSubmit")).click();
             Thread.sleep(2000);
             
-            // Extrahiere Cookies für spätere HTTP-Requests
             LoggerManagerE.info("Extracting session cookies...");
             var cookies = driver.manage().getCookies();
             StringBuilder cookieString = new StringBuilder();
@@ -127,14 +126,12 @@ public class HybridTradeMonitor {
                 
             String content = response.body();
             
-            // Prüfe ob die Session noch gültig ist
             if (content.contains("To see trades in realtime, please log in")) {
                 LoggerManagerE.info("Session expired, performing new login...");
                 performInitialLogin();
-                return fetchPageWithHttp();  // Retry nach neuem Login
+                return fetchPageWithHttp();
             }
 
-            // Speichere die Seite
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             String fileName = baseDir + File.separator + providerName + File.separator + timestamp + ".html";
             File dir = new File(baseDir + File.separator + providerName);
@@ -152,7 +149,6 @@ public class HybridTradeMonitor {
         } catch (Exception e) {
             LoggerManagerE.error("Error fetching page via HTTP: " + e.getMessage());
             
-            // Versuche ein Re-Login wenn die Session abgelaufen sein könnte
             LoggerManagerE.info("Attempting re-login due to error...");
             try {
                 performInitialLogin();
@@ -168,73 +164,52 @@ public class HybridTradeMonitor {
         try {
             LoggerManagerE.info("Starting monitoring for Signal Provider ID: " + providerName);
             
-            // Initiales Login mit Selenium
             performInitialLogin();
             
-            // Erster Abruf
-            String content = fetchPageWithHttp();
-            if (content != null) {
-                analyzer.analyzeHtmlContent(content);
-            }
+            checkAndPollForSignal();
             
-            // Schedule für regelmäßige HTTP-Abrufe
             scheduler = Executors.newScheduledThreadPool(1);
             
-            // Berechne Zeit bis zur nächsten Viertelstunde minus 20 Sekunden
             LocalDateTime now = LocalDateTime.now();
             
             int currentMinute = now.getMinute();
-            int[] checkMinutes = {14, 29, 44, 59};  // Viertelstunden - 1, damit wir 20 Sekunden davor sind
+            int[] checkMinutes = {14, 29, 44, 59};  // One minute before quarters
             
-            // Finde die nächste Viertelstunde
             int nextMinute = -1;
             for (int checkMinute : checkMinutes) {
                 if (currentMinute < checkMinute || 
-                    (currentMinute == checkMinute && now.getSecond() < 40)) {
+                    (currentMinute == checkMinute && now.getSecond() < 1)) {
                     nextMinute = checkMinute;
                     break;
                 }
             }
             
-            // Wenn keine nächste Viertelstunde in dieser Stunde, nimm die erste der nächsten Stunde
             if (nextMinute == -1) {
                 nextMinute = checkMinutes[0];
                 now = now.plusHours(1);
             }
             
-            // Setze die Zeit auf die berechnete Minute und 40 Sekunden
             LocalDateTime nextRun = now
                 .withMinute(nextMinute)
-                .withSecond(40)
+                .withSecond(1)
                 .withNano(0);
             
-            // Wenn die berechnete Zeit in der Vergangenheit liegt, füge eine Stunde hinzu
             if (nextRun.isBefore(LocalDateTime.now())) {
                 nextRun = nextRun.plusHours(1);
             }
             
-            // Berechne die Verzögerung bis zur ersten Ausführung
             long initialDelay = Duration.between(LocalDateTime.now(), nextRun).toMillis();
             
-            LoggerManagerE.info("Next page fetch scheduled for: " + 
+            LoggerManagerE.info("Next check scheduled for: " + 
                 nextRun.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             
-            // Schedule mit fester Rate von 15 Minuten
             scheduler.scheduleAtFixedRate(() -> {
                 try {
-                    LocalDateTime fetchTime = LocalDateTime.now();
-                    LoggerManagerE.info("Fetching page at: " + 
-                        fetchTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                    checkAndPollForSignal();
                     
-                    String pageContent = fetchPageWithHttp();
-                    if (pageContent != null) {
-                        analyzer.analyzeHtmlContent(pageContent);
-                    }
-                    
-                    // Berechne nächsten Ausführungszeitpunkt
-                    LocalDateTime next = fetchTime.plusMinutes(15);
-                    next = next.withSecond(40);
-                    LoggerManagerE.info("Next page fetch scheduled for: " + 
+                    LocalDateTime next = LocalDateTime.now().plusMinutes(15);
+                    next = next.withSecond(1);
+                    LoggerManagerE.info("Next check scheduled for: " + 
                         next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
                 } catch (Exception e) {
                     LoggerManagerE.error("Error in monitoring task: " + e.getMessage());
@@ -246,6 +221,69 @@ public class HybridTradeMonitor {
         } catch (Exception e) {
             LoggerManagerE.error("Error starting monitor: " + e.getMessage());
             throw new RuntimeException("Failed to start monitoring", e);
+        }
+    }
+
+    private void checkAndPollForSignal() {
+        LocalDateTime startTime = LocalDateTime.now();
+        LoggerManagerE.info("Starting signal check at: " + 
+            startTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        
+        String content = fetchPageWithHttp();
+        if (content != null) {
+            analyzer.analyzeHtmlContent(content);
+            boolean signalFound = new File(signalFile).exists();
+            LoggerManagerE.info("Initial check result: " + (signalFound ? "Signal found" : "No signal found"));
+            
+            if (!signalFound) {
+                pollForSignal(startTime);
+            }
+        }
+    }
+
+    private void pollForSignal(LocalDateTime startTime) {
+        ScheduledExecutorService pollingScheduler = Executors.newScheduledThreadPool(1);
+        AtomicBoolean signalFound = new AtomicBoolean(false);
+        
+        LoggerManagerE.info("Starting polling sequence");
+        
+        ScheduledFuture<?> pollingFuture = pollingScheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (Duration.between(startTime, LocalDateTime.now()).toSeconds() >= 60) {
+                    LoggerManagerE.info("Polling timeout reached (60 seconds)");
+                    pollingScheduler.shutdown();
+                    return;
+                }
+                
+                String content = fetchPageWithHttp();
+                if (content != null) {
+                    LoggerManagerE.info("Polling check at: " + 
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                    
+                    analyzer.analyzeHtmlContent(content);
+                    boolean found = new File(signalFile).exists();
+                    if (found) {
+                        LoggerManagerE.info("Signal found during polling");
+                        signalFound.set(true);
+                        pollingScheduler.shutdown();
+                    }
+                }
+            } catch (Exception e) {
+                LoggerManagerE.error("Error during polling: " + e.getMessage());
+            }
+        }, 0, 2, TimeUnit.SECONDS);
+        
+        try {
+            pollingScheduler.awaitTermination(65, TimeUnit.SECONDS);
+            if (!signalFound.get()) {
+                LoggerManagerE.info("Polling completed without finding signal");
+            }
+        } catch (InterruptedException e) {
+            LoggerManagerE.error("Polling interrupted: " + e.getMessage());
+            Thread.currentThread().interrupt();
+        } finally {
+            pollingFuture.cancel(true);
+            pollingScheduler.shutdownNow();
         }
     }
 

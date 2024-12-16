@@ -59,7 +59,7 @@ public class TradeAnalyzer {
     }
 
     // Neue Methode für direkten HTML-Content
-    public void analyzeHtmlContent(String content) {
+    public boolean analyzeHtmlContent(String content) {
         try {
             LoggerManagerE.info("Starting analysis of HTML content");
             List<Map<String, String>> allTradeInfo = new ArrayList<>();
@@ -67,7 +67,7 @@ public class TradeAnalyzer {
             Matcher tbodyMatcher = FIRST_TBODY_PATTERN.matcher(content);
             if (!tbodyMatcher.find()) {
                 LoggerManagerE.info("No tbody found in HTML content");
-                return;
+                return false;
             }
             
             String tableContent = tbodyMatcher.group(1);
@@ -75,24 +75,30 @@ public class TradeAnalyzer {
             while (tradeMatcher.find()) {
                 String type = tradeMatcher.group(1);
                 
-                int rowStart = tableContent.lastIndexOf("<tr", tradeMatcher.start());
-                int rowEnd = tableContent.indexOf("</tr>", tradeMatcher.end()) + 5;
-                if (rowStart >= 0 && rowEnd >= 0) {
-                    String rowContent = tableContent.substring(rowStart, rowEnd);
-                    Map<String, String> tradeInfo = extractTradeInfo(rowContent);
-                    allTradeInfo.add(tradeInfo);
-                    logTrade(type, rowContent);
+                // Check if it's a Stop order type we're interested in
+                if (type.contains("Stop")) {
+                    int rowStart = tableContent.lastIndexOf("<tr", tradeMatcher.start());
+                    int rowEnd = tableContent.indexOf("</tr>", tradeMatcher.end()) + 5;
+                    if (rowStart >= 0 && rowEnd >= 0) {
+                        String rowContent = tableContent.substring(rowStart, rowEnd);
+                        Map<String, String> tradeInfo = extractTradeInfo(rowContent);
+                        allTradeInfo.add(tradeInfo);
+                        logTrade(type, rowContent);
+                    }
                 }
             }
             
             if (!allTradeInfo.isEmpty()) {
                 LoggerManagerE.info("Found " + allTradeInfo.size() + " trades to process");
                 writeSignalFile(allTradeInfo);
+                return true;
             } else {
                 LoggerManagerE.info("No trades found in HTML content");
+                return false;
             }
         } catch (Exception e) {
             LoggerManagerE.error("Error analyzing HTML content: " + e.getMessage());
+            return false;
         }
     }
 
